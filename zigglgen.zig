@@ -412,33 +412,6 @@ fn renderCode(
         \\// OpenGL XML API Registry revision: {[registry_revision]s}
         \\// zigglgen version: 0.4.0
         \\
-        \\// Example usage:
-        \\//
-        \\//     const windowing = @import(...);
-        \\//     const gl = @import("gl");
-        \\//
-        \\//     // Procedure table that will hold OpenGL functions loaded at runtime.
-        \\//     var procs: gl.ProcTable = undefined;
-        \\//
-        \\//     pub fn main() !void {{
-        \\//         // Create an OpenGL context using a windowing system of your choice.
-        \\//         const context = windowing.createContext(...);
-        \\//         defer context.destroy();
-        \\//
-        \\//         // Make the OpenGL context current on the calling thread.
-        \\//         windowing.makeContextCurrent(context);
-        \\//         defer windowing.makeContextCurrent(null);
-        \\//
-        \\//         // Initialize the procedure table.
-        \\//         if (!procs.init(windowing.getProcAddress)) return error.InitFailed;
-        \\//
-        \\//         // Issue OpenGL commands to your heart's content!
-        \\//         const alpha: gl.{[clear_color_type]s} = 1;
-        \\//         gl.{[clear_color_fn]s}(1, 1, 1, alpha);
-        \\//         procs.Clear(gl.COLOR_BUFFER_BIT);
-        \\//     }}
-        \\//
-        \\
         \\const std = @import("std");
         \\const builtin = @import("builtin");
         \\
@@ -479,38 +452,10 @@ fn renderCode(
             .common => ".common",
             .common_lite => ".common_lite",
         } else "null",
-        .clear_color_type = if (profile == .common_lite) "fixed" else "float",
-        .clear_color_fn = if (profile == .common_lite) "ClearColorx" else "ClearColor",
     });
-    if (any_extensions) {
-        try writer.writeAll(
-            \\
-            \\/// Returns `true` if the specified OpenGL extension is supported by the procedure table that is
-            \\/// current on the calling thread, `false` otherwise.
-            \\pub fn extensionSupported(comptime extension: Extension) bool {
-            \\    return @field(ProcTable, @tagName(extension));
-            \\}
-            \\
-            \\/// OpenGL extension.
-            \\pub const Extension = enum {
-            \\
-        );
-        var extension_it = extensions.iterator();
-        while (extension_it.next()) |extension| {
-            try writer.print(
-                \\    {f},
-                \\
-            , .{fmtIdFlags(@tagName(extension.key), .{ .allow_primitive = true })});
-        }
-        try writer.writeAll(
-            \\};
-            \\
-        );
-    }
     try writer.writeAll(
         \\
-        \\pub const APIENTRY: std.builtin.CallingConvention = if (builtin.os.tag == .windows) .winapi else .c;
-        \\pub const PROC = *align(@alignOf(fn () callconv(APIENTRY) void)) const anyopaque;
+        \\pub const PROC = *align(@alignOf(fn () callconv(.c) void)) const anyopaque;
         \\
         \\//#region Types
         \\
@@ -542,200 +487,19 @@ fn renderCode(
     try writer.writeAll(
         \\//#endregion Constants
         \\
-    );
-    try writer.writeAll(
-        \\/// Holds OpenGL features loaded at runtime.
-        \\///
-        \\/// This struct is very large; avoid storing instances of it on the stack.
-        \\pub const ProcTable = struct {
-        \\    //#region Fields
+        \\//#region Commands
         \\
     );
-    if (any_extensions) {
-        var extension_it = extensions.iterator();
-        while (extension_it.next()) |extension| {
-            try writer.print(
-                \\    {f}: bool,
-                \\
-            , .{fmtIdFlags(@tagName(extension.key), .{ .allow_primitive = true, .allow_underscore = true })});
-        }
-    }
     var command_it = commands.iterator();
     while (command_it.next()) |command| {
-        try writer.print("    {f}: ", .{fmtIdFlags(@tagName(command.key), .{ .allow_primitive = true, .allow_underscore = true })});
-        if (!command.value.required) try writer.writeAll("?");
-        try writer.writeAll("*const fn (");
+        try writer.print("pub extern \"GL\" fn gl{f}(", .{fmtIdFlags(@tagName(command.key), .{})});
         try renderParams(writer, command, false);
-        try writer.writeAll(") callconv(APIENTRY) ");
+        try writer.writeAll(") callconv(.c) ");
         try renderReturnType(writer, command);
-        try writer.writeAll(",\n");
+        try writer.writeAll(";\n");
     }
     try writer.writeAll(
-        \\    //#endregion Fields
-        \\
-        \\    /// Initializes the specified procedure table and returns `true` if successful,
-        \\    /// `false` otherwise.
-        \\    ///
-        \\    /// `loader` is duck-typed. Given the prefixed name of an OpenGL command (e.g. `"glClear"`), it
-        \\    /// should return a pointer to the corresponding function. It should be able to be used in one
-        \\    /// of the following two ways:
-        \\    ///
-        \\    /// - `@as(?PROC, loader(@as([*:0]const u8, prefixed_name)))`
-        \\    /// - `@as(?PROC, loader.getProcAddress(@as([*:0]const u8, prefixed_name)))`
-        \\    ///
-        \\    /// If your windowing system has a "get procedure address" function, it is usually enough to
-        \\    /// simply pass that function as the `loader` argument.
-        \\    ///
-        \\    /// No references to `loader` are retained after this function returns.
-        \\    ///
-        \\    /// There is no corresponding `deinit` function.
-        \\    pub fn init(procs: *ProcTable, loader: anytype) bool {
-        \\        @setEvalBranchQuota(1_000_000);
-        \\        var success: u1 = 1;
-        \\        inline for (@typeInfo(ProcTable).@"struct".fields) |field_info| {
-        \\            switch (@typeInfo(field_info.type)) {
-        \\                .pointer => |ptr_info| switch (@typeInfo(ptr_info.child)) {
-        \\                    .@"fn" => {
-        \\                        success &= @intFromBool(procs.initCommand(loader, field_info.name));
-        \\                    },
-        \\                    else => comptime unreachable,
-        \\                },
-        \\
-    );
-    if (any_extensions) {
-        try writer.writeAll(
-            \\                .optional => |opt_info| switch (@typeInfo(opt_info.child)) {
-            \\                    .pointer => |ptr_info| switch (@typeInfo(ptr_info.child)) {
-            \\                        .@"fn" => {
-            \\                            @field(procs, field_info.name) = null;
-            \\                        },
-            \\                        else => comptime unreachable,
-            \\                    },
-            \\                    else => comptime unreachable,
-            \\                },
-            \\                .bool => {
-            \\                    @field(procs, field_info.name) = false;
-            \\                },
-            \\
-        );
-    }
-    try writer.writeAll(
-        \\                else => comptime unreachable,
-        \\            }
-        \\        }
-        \\
-    );
-    if (any_extensions) {
-        try writer.writeAll(
-            \\        if (success == 0) return false;
-            \\
-        );
-        var extension_it = extensions.iterator();
-        while (extension_it.next()) |extension| {
-            if (extension.value.commands.count() != 0) {
-                try writer.print(
-                    \\        if (procs.initExtension("{s}")) {{
-                    \\
-                , .{@tagName(extension.key)});
-                var extension_command_it = extension.value.commands.iterator();
-                while (extension_command_it.next()) |extension_command| {
-                    try writer.print(
-                        \\            _ = procs.initCommand(loader, "{s}");
-                        \\
-                    , .{@tagName(extension_command)});
-                }
-                try writer.writeAll(
-                    \\        }
-                    \\
-                );
-            } else {
-                try writer.print(
-                    \\        _ = procs.initExtension("{s}");
-                    \\
-                , .{@tagName(extension.key)});
-            }
-        }
-        try writer.writeAll(
-            \\        return true;
-            \\
-        );
-    } else {
-        try writer.writeAll(
-            \\        return success != 0;
-            \\
-        );
-    }
-    try writer.writeAll(
-        \\    }
-        \\
-        \\    fn initCommand(procs: *ProcTable, loader: anytype, comptime name: [:0]const u8) bool {
-        \\        if (getProcAddress(loader, "gl" ++ name)) |proc| {
-        \\            @field(procs, name) = @ptrCast(proc);
-        \\            return true;
-        \\        } else {
-        \\            return @typeInfo(@TypeOf(@field(procs, name))) == .optional;
-        \\        }
-        \\    }
-        \\
-        \\    fn getProcAddress(loader: anytype, prefixed_name: [:0]const u8) ?PROC {
-        \\        const loader_info = @typeInfo(@TypeOf(loader));
-        \\        const loader_is_fn =
-        \\            loader_info == .@"fn" or
-        \\            loader_info == .pointer and @typeInfo(loader_info.pointer.child) == .@"fn";
-        \\        if (loader_is_fn) {
-        \\            return @as(?PROC, loader(@as([*:0]const u8, prefixed_name)));
-        \\        } else {
-        \\            return @as(?PROC, loader.getProcAddress(@as([*:0]const u8, prefixed_name)));
-        \\        }
-        \\    }
-        \\
-    );
-    if (any_extensions) {
-        try writer.writeAll(
-            \\
-            \\    fn initExtension(procs: *ProcTable, comptime name: [:0]const u8) bool {
-            \\
-        );
-        if (version[0] >= 3) {
-            // GL 3.0 and GL ES 3.0 both introduced querying extensions by index via 'GetStringi'.
-            // Starting with GL 3.2, querying extensions via 'GetString' is no longer supported
-            // under the Core profile.
-            try writer.writeAll(
-                \\        var count: c_int = 0;
-                \\        procs.GetIntegerv(NUM_EXTENSIONS, (&count)[0..1]);
-                \\        if (count < 0) return false;
-                \\        var i: c_uint = 0;
-                \\        while (i < @as(c_uint, @intCast(count))) : (i += 1) {
-                \\            const prefixed_name = procs.GetStringi(EXTENSIONS, i) orelse return false;
-                \\            if (std.mem.orderZ(u8, prefixed_name, "GL_" ++ name) == .eq) {
-                \\
-            );
-        } else {
-            try writer.writeAll(
-                \\        const prefixed_names = procs.GetString(EXTENSIONS) orelse return false;
-                \\        var it = std.mem.tokenizeScalar(u8, std.mem.span(prefixed_names), ' ');
-                \\        while (it.next()) |prefixed_name| {
-                \\            if (std.mem.eql(u8, prefixed_name, "GL_" ++ name)) {
-                \\
-            );
-        }
-        try writer.writeAll(
-            \\                @field(procs, name) = true;
-            \\                return true;
-            \\            }
-            \\        }
-            \\        return false;
-            \\    }
-            \\
-        );
-    }
-    try writer.writeAll(
-        \\};
-        \\
-        \\test {
-        \\    @setEvalBranchQuota(1_000_000);
-        \\    std.testing.refAllDeclsRecursive(@This());
-        \\}
+        \\//#endregion Commands
         \\
     );
 }

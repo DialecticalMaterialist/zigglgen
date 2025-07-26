@@ -432,14 +432,10 @@ fn renderCode(
         \\//         // Initialize the procedure table.
         \\//         if (!procs.init(windowing.getProcAddress)) return error.InitFailed;
         \\//
-        \\//         // Make the procedure table current on the calling thread.
-        \\//         gl.makeProcTableCurrent(&procs);
-        \\//         defer gl.makeProcTableCurrent(null);
-        \\//
         \\//         // Issue OpenGL commands to your heart's content!
         \\//         const alpha: gl.{[clear_color_type]s} = 1;
         \\//         gl.{[clear_color_fn]s}(1, 1, 1, alpha);
-        \\//         gl.Clear(gl.COLOR_BUFFER_BIT);
+        \\//         procs.Clear(gl.COLOR_BUFFER_BIT);
         \\//     }}
         \\//
         \\
@@ -486,29 +482,13 @@ fn renderCode(
         .clear_color_type = if (profile == .common_lite) "fixed" else "float",
         .clear_color_fn = if (profile == .common_lite) "ClearColorx" else "ClearColor",
     });
-    try writer.writeAll(
-        \\
-        \\/// Makes the specified procedure table current on the calling thread.
-        \\///
-        \\/// A valid procedure table must be made current on a thread before issuing any OpenGL commands from
-        \\/// that same thread.
-        \\pub fn makeProcTableCurrent(procs: ?*const ProcTable) void {
-        \\    ProcTable.current = procs;
-        \\}
-        \\
-        \\/// Returns the procedure table that is current on the calling thread.
-        \\pub fn getCurrentProcTable() ?*const ProcTable {
-        \\    return ProcTable.current;
-        \\}
-        \\
-    );
     if (any_extensions) {
         try writer.writeAll(
             \\
             \\/// Returns `true` if the specified OpenGL extension is supported by the procedure table that is
             \\/// current on the calling thread, `false` otherwise.
             \\pub fn extensionSupported(comptime extension: Extension) bool {
-            \\    return @field(ProcTable.current orelse return false, @tagName(extension));
+            \\    return @field(ProcTable, @tagName(extension));
             \\}
             \\
             \\/// OpenGL extension.
@@ -562,30 +542,12 @@ fn renderCode(
     try writer.writeAll(
         \\//#endregion Constants
         \\
-        \\//#region Commands
-        \\
     );
-    var command_it = commands.iterator();
-    while (command_it.next()) |command| {
-        try writer.print("pub fn {f}(", .{fmtIdFlags(@tagName(command.key), .{})});
-        try renderParams(writer, command, false);
-        try writer.writeAll(") callconv(APIENTRY) ");
-        try renderReturnType(writer, command);
-        try writer.print(" {{\n    return ProcTable.current.?.{f}", .{fmtIdFlags(@tagName(command.key), .{ .allow_primitive = true, .allow_underscore = true })});
-        if (!command.value.required) try writer.writeAll(".?");
-        try writer.writeAll("(");
-        try renderParams(writer, command, true);
-        try writer.writeAll(");\n}\n");
-    }
     try writer.writeAll(
-        \\//#endregion Commands
-        \\
         \\/// Holds OpenGL features loaded at runtime.
         \\///
         \\/// This struct is very large; avoid storing instances of it on the stack.
         \\pub const ProcTable = struct {
-        \\    threadlocal var current: ?*const ProcTable = null;
-        \\
         \\    //#region Fields
         \\
     );
@@ -598,7 +560,7 @@ fn renderCode(
             , .{fmtIdFlags(@tagName(extension.key), .{ .allow_primitive = true, .allow_underscore = true })});
         }
     }
-    command_it = commands.iterator();
+    var command_it = commands.iterator();
     while (command_it.next()) |command| {
         try writer.print("    {f}: ", .{fmtIdFlags(@tagName(command.key), .{ .allow_primitive = true, .allow_underscore = true })});
         if (!command.value.required) try writer.writeAll("?");
@@ -613,9 +575,6 @@ fn renderCode(
         \\
         \\    /// Initializes the specified procedure table and returns `true` if successful,
         \\    /// `false` otherwise.
-        \\    ///
-        \\    /// A procedure table must be successfully initialized before passing it to
-        \\    /// `makeProcTableCurrent` or accessing any of its fields.
         \\    ///
         \\    /// `loader` is duck-typed. Given the prefixed name of an OpenGL command (e.g. `"glClear"`), it
         \\    /// should return a pointer to the corresponding function. It should be able to be used in one

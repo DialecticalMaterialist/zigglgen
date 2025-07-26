@@ -12,7 +12,6 @@
         "api_registry.zig",
         "build.zig",
         "build.zig.zon",
-        "shims.zig",
         "zigglgen.zig",
 
         "LICENSES/",

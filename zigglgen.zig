@@ -478,29 +478,29 @@ fn renderCode(
         .clear_color_type = if (profile == .common_lite) "fixed" else "float",
         .clear_color_fn = if (profile == .common_lite) "ClearColorx" else "ClearColor",
     });
-    try writer.writeAll(
-        \\
-        \\/// Makes the specified procedure table current on the calling thread.
-        \\///
-        \\/// A valid procedure table must be made current on a thread before issuing any OpenGL commands from
-        \\/// that same thread.
-        \\pub fn makeProcTableCurrent(procs: ?*const ProcTable) void {
-        \\    ProcTable.current = procs;
-        \\}
-        \\
-        \\/// Returns the procedure table that is current on the calling thread.
-        \\pub fn getCurrentProcTable() ?*const ProcTable {
-        \\    return ProcTable.current;
-        \\}
-        \\
-    );
+    // try writer.writeAll(
+    //     \\
+    //     \\/// Makes the specified procedure table current on the calling thread.
+    //     \\///
+    //     \\/// A valid procedure table must be made current on a thread before issuing any OpenGL commands from
+    //     \\/// that same thread.
+    //     \\pub fn makeProcTableCurrent(procs: ?*const ProcTable) void {
+    //     \\    ProcTable.current = procs;
+    //     \\}
+    //     \\
+    //     \\/// Returns the procedure table that is current on the calling thread.
+    //     \\pub fn getCurrentProcTable() ?*const ProcTable {
+    //     \\    return ProcTable.current;
+    //     \\}
+    //     \\
+    // );
     if (any_extensions) {
         try writer.writeAll(
             \\
             \\/// Returns `true` if the specified OpenGL extension is supported by the procedure table that is
             \\/// current on the calling thread, `false` otherwise.
             \\pub fn extensionSupported(comptime extension: Extension) bool {
-            \\    return @field(ProcTable.current orelse return false, @tagName(extension));
+            \\    return @field(ProcTable, @tagName(extension));
             \\}
             \\
             \\/// OpenGL extension.
@@ -553,31 +553,31 @@ fn renderCode(
     }
     try writer.writeAll(
         \\//#endregion Constants
-        \\
-        \\//#region Commands
+        // \\
+        // \\//#region Commands
         \\
     );
-    var command_it = commands.iterator();
-    while (command_it.next()) |command| {
-        try writer.print("pub fn {f}(", .{std.zig.fmtId(@tagName(command.key))});
-        try renderParams(writer, command, false);
-        try writer.writeAll(") callconv(APIENTRY) ");
-        try renderReturnType(writer, command);
-        try writer.print(" {{\n    return ProcTable.current.?.{f}", .{std.zig.fmtId(@tagName(command.key))});
-        if (!command.value.required) try writer.writeAll(".?");
-        try writer.writeAll("(");
-        try renderParams(writer, command, true);
-        try writer.writeAll(");\n}\n");
-    }
+    // var command_it = commands.iterator();
+    // while (command_it.next()) |command| {
+    //     try writer.print("pub fn {f}(", .{std.zig.fmtId(@tagName(command.key))});
+    //     try renderParams(writer, command, false);
+    //     try writer.writeAll(") callconv(APIENTRY) ");
+    //     try renderReturnType(writer, command);
+    //     try writer.print(" {{\n    return ProcTable.{f}", .{std.zig.fmtId(@tagName(command.key))});
+    //     if (!command.value.required) try writer.writeAll(".?");
+    //     try writer.writeAll("(");
+    //     try renderParams(writer, command, true);
+    //     try writer.writeAll(");\n}\n");
+    // }
     try writer.writeAll(
-        \\//#endregion Commands
-        \\
+        // \\//#endregion Commands
+        // \\
         \\/// Holds OpenGL features loaded at runtime.
         \\///
         \\/// This struct is very large; avoid storing instances of it on the stack.
         \\pub const ProcTable = struct {
-        \\    threadlocal var current: ?*const ProcTable = null;
-        \\
+        // \\    threadlocal var current: ?*const ProcTable = null;
+        // \\
         \\    //#region Fields
         \\
     );
@@ -590,7 +590,7 @@ fn renderCode(
             , .{std.zig.fmtId(@tagName(extension.key))});
         }
     }
-    command_it = commands.iterator();
+    var command_it = commands.iterator();
     while (command_it.next()) |command| {
         try writer.print("    {f}: ", .{std.zig.fmtId(@tagName(command.key))});
         if (!command.value.required) try writer.writeAll("?");

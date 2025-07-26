@@ -489,13 +489,18 @@ fn renderCode(
     );
     var command_it = commands.iterator();
     while (command_it.next()) |command| {
-        try writer.print("pub extern \"GL\" fn gl{f}(", .{fmtIdFlags(@tagName(command.key), .{})});
+        try writer.print("extern \"GL\" fn gl{f}(", .{fmtIdFlags(@tagName(command.key), .{})});
         try renderParams(writer, command, false);
         try writer.writeAll(") callconv(.c) ");
         try renderReturnType(writer, command);
-        try writer.writeAll(";\n");
+        try writer.print(
+            \\;
+            \\pub const {f} = gl{f};
+            \\
+        , .{ fmtIdFlags(@tagName(command.key), .{}), fmtIdFlags(@tagName(command.key), .{}) });
     }
     try writer.writeAll(
+        \\
         \\//#endregion Commands
         \\
     );

@@ -51,7 +51,7 @@ pub fn main() !void {
         std.io.bufferedWriter(std.io.getStdOut().writer());
     const stdout = stdout_state.writer();
 
-    try renderCode(stdout, api, version, profile, &extensions, &types, &constants, &commands);
+    try renderCode(stdout, api, version, profile, &types, &constants, &commands);
 
     try stdout_state.flush();
 }
@@ -393,13 +393,10 @@ fn renderCode(
     api: registry.Api.Name,
     version: [2]u8,
     profile: ?registry.ProfileName,
-    extensions: *ResolvedExtensions,
     types: *ResolvedTypes,
     constants: *ResolvedConstants,
     commands: *ResolvedCommands,
 ) !void {
-    const any_extensions = extensions.count() != 0;
-
     try writer.print("" ++
         // REUSE-IgnoreStart
         \\// © 2013-2020 The Khronos Group Inc.

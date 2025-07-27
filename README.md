@@ -5,6 +5,12 @@ SPDX-License-Identifier: MIT
 
 # zigglgen
 
+Fork for Linux that removes the ProcTable initialisation and instead just define the OpenGL functions as extern.
+
+IMPORTANT difference is that you need to link libGL.so in build.so see the example below.
+
+exe.root_module.linkSystemLibrary("GL", .{});
+
 The only Zig OpenGL binding generator you need.
 
 ## Installation and usage
@@ -49,9 +55,6 @@ pub fn build(b: *std.Build) void {
 const windowing = @import(...);
 const gl = @import("gl");
 
-// Procedure table that will hold OpenGL functions loaded at runtime.
-var procs: gl.ProcTable = undefined;
-
 pub fn main() !void {
     // Create an OpenGL context using a windowing system of your choice.
     const context = windowing.createContext(...);
@@ -60,13 +63,6 @@ pub fn main() !void {
     // Make the OpenGL context current on the calling thread.
     windowing.makeContextCurrent(context);
     defer windowing.makeContextCurrent(null);
-
-    // Initialize the procedure table.
-    if (!procs.init(windowing.getProcAddress)) return error.InitFailed;
-
-    // Make the procedure table current on the calling thread.
-    gl.makeProcTableCurrent(&procs);
-    defer gl.makeProcTableCurrent(null);
 
     // Issue OpenGL commands to your heart's content!
     const alpha: gl.float = 1;
@@ -103,70 +99,6 @@ pub const info = struct {};
 Contains information about the generated set of OpenGL bindings, such as the OpenGL API, version and profile the
 bindings were generated for.
 
-### `ProcTable`
-
-```zig
-pub const ProcTable = struct {};
-```
-
-Holds pointers to OpenGL functions loaded at runtime.
-
-This struct is very large, so you should avoid storing instances of it on the stack. Use global variables or allocate
-them on the heap instead.
-
-### `ProcTable.init`
-
-```zig
-pub fn init(procs: *ProcTable, loader: anytype) bool {}
-```
-
-Initializes the specified procedure table and returns `true` if successful, `false` otherwise.
-
-A procedure table must be successfully initialized before passing it to `makeProcTableCurrent` or accessing any of
-its fields.
-
-`loader` is duck-typed. Given the prefixed name of an OpenGL command (e.g. `"glClear"`), it should return a pointer to
-the corresponding function. It should be able to be used in one of the following two ways:
-
-- `@as(?PROC, loader(@as([*:0]const u8, prefixed_name)))`
-- `@as(?PROC, loader.getProcAddress(@as([*:0]const u8, prefixed_name)))`
-
-If your windowing system has a "get procedure address" function, it is usually enough to simply pass that function as
-the `loader` argument.
-
-No references to `loader` are retained after this function returns.
-
-There is no corresponding `deinit` function.
-
-### `makeProcTableCurrent`
-
-```zig
-pub fn makeProcTableCurrent(procs: ?*const ProcTable) void {}
-```
-
-Makes the specified procedure table current on the calling thread.
-
-A valid procedure table must be made current on a thread before issuing any OpenGL commands from that same thread.
-
-### `getCurrentProcTable`
-
-```zig
-pub fn getCurrentProcTable() ?*const ProcTable {}
-```
-
-Returns the procedure table that is current on the calling thread.
-
-### `extensionSupported`
-
-(Only generated if at least one extension is specified.)
-
-```zig
-pub fn extensionSupported(comptime extension: Extension) bool {}
-```
-
-Returns `true` if the specified OpenGL extension is supported by the procedure table that is current on the calling
-thread, `false` otherwise.
-
 ## FAQ
 
 ### Which OpenGL APIs are supported?
@@ -182,17 +114,6 @@ Registry](https://github.com/KhronosGroup/OpenGL-Registry/tree/main/xml) are sup
 
 The [`updateApiRegistry.ps1`](updateApiRegistry.ps1) PowerShell script is used to fetch the API registry and convert it
 to a set of Zig source files that are committed to revision control and used by zigglgen.
-
-### Why is a thread-local procedure table required?
-
-Per the OpenGL spec, OpenGL function pointers loaded when one OpenGL context is current are not guaranteed to remain
-valid when a different context becomes current. This means that it would be incorrect to load a single set of function
-pointers to global memory just once at application startup and then have them be shared by all current and future
-OpenGL contexts.
-
-In order to support portable multi-threaded multi-context OpenGL applications, it must be possible to load multiple sets
-of function pointers. Because OpenGL contexts are already thread-local, it makes a lot of sense to handle function
-pointers in a similar manner.
 
 ### Why aren't OpenGL constants represented as Zig enums?
 
@@ -217,22 +138,6 @@ ensures that calls to supported extension functions are always safe.
 
 If you use OpenGL extensions it is your responsibility to read the extension specifications carefully and understand
 under which conditions their features are available.
-
-### Why can't I pass my windowing system's `getProcAddress` function to `ProcTable.init`?
-
-It might have the wrong signature, such as taking a `[:0]const u8` (0-terminated slice) instead of a `[*:0]const u8`
-(0-terminated many-pointer), or returning a pointer without an alignment qualifier. To fix this, define your own
-function that wraps the windowing system's function and corrects the mismatch:
-
-```zig
-fn fixedGetProcAddress(prefixed_name: [*:0]const u8) ?gl.PROC {
-    return @alignCast(windowing.getProcAddress(std.mem.span(prefixed_name)));
-}
-
-// ...
-
-if (!gl_procs.init(fixedGetProcAddress)) return error.InitFailed;
-```
 
 ## Contributing
 
